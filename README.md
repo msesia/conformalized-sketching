@@ -1,6 +1,6 @@
 # Conformalized Sketching
 
-This repository contains a software implementation of the methods described in the paper "Conformalized Frequency Estimation from Sketched Data", along with the scripts used to carry out the numerical experiments and data analyses described therein.
+This repository contains a software implementation of the methods described in the paper "Conformalized Frequency Estimation from Sketched Data" (https://arxiv.org/abs/2204.04270), along with the scripts used to carry out the numerical experiments and data analyses described therein.
 
 ## Contents:
  - cms/             A Python package (with an R backend for some operations) implementing the proposed conformalized sketching method, as well as the 3 benchmark approaches (Classical, Bayesian, and Bootstrap)
