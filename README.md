@@ -1,7 +1,7 @@
 # Conformalized Sketching
 
 This repository contains a software implementation of the methods described in the papers:
- - "Conformalized Frequency Estimation from Sketched Data", by Matteo Sesia and Stefano Favaro (accepted in NeurIPS 2022)
+ - "Conformalized Frequency Estimation from Sketched Data", by Matteo Sesia and Stefano Favaro (accepted in NeurIPS 2022) https://arxiv.org/abs/2204.04270
  - "Conformal Frequency Estimation with Sketched Data under Relaxed Exchangeability", by Matteo Sesia, Stefano Favaro, and Edgar Dobriban (longer version of the above, preprint)
 
 
