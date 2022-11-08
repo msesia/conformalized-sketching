@@ -17,7 +17,7 @@ from cms.diagnostics import evaluate_marginal, evaluate_conditional
 print ('Number of arguments:', len(sys.argv), 'arguments.')
 print ('Argument List:', str(sys.argv))
 model_num = 1
-if len(sys.argv) != 13:
+if len(sys.argv) != 14:
     print("Error: incorrect number of parameters.")
     quit()
 
@@ -38,6 +38,7 @@ n_track = 1000
 seed = 2021
 posterior = "betamix"
 confidence = 95/100
+two_sided = False
 
 # Input
 sketch_name = sys.argv[1]
@@ -48,12 +49,13 @@ n = int(sys.argv[5])
 method = sys.argv[6]
 method_unique = sys.argv[7]
 if method_unique != "NA":
-    method_unique = bool(int(method_unique))
+    method_unique = int(method_unique)
 n_bins = sys.argv[8]
 n_track = sys.argv[9]
 seed = int(sys.argv[10])
 posterior = sys.argv[11]
 confidence_str = sys.argv[12]
+two_sided = bool(int(sys.argv[13]))
 
 confidence = float(confidence_str)/100
 
@@ -65,32 +67,16 @@ if n_track != "NA":
 # Stream parameters
 n_docs = 2000
 
-n_test=10000
+n_test=100 # NOTE: originally 10000
 
 # Output file
-outfile_prefix = "exp1_" + sketch_name + "_" + stream_name + "_d" + str(d) + "_w" + str(w) + "_n" + str(n) + "_s" + str(seed) + "_" + posterior
+outfile_prefix = "exp3_" + sketch_name + "_" + stream_name + "_d" + str(d) + "_w" + str(w) + "_n" + str(n) + "_s" + str(seed) + "_" + posterior
 
 ##################
 # Run experiment #
 ##################
 
 np.random.seed(seed)
-
-# # Define word data stream
-# if stream_name == "words":
-#     exchangeability = 1.0
-#     filename = "data/words_nd" + str(n_docs) + "_exch" + str(exchangeability) + ".txt"
-#     if os.path.exists(filename):
-#         print("Loading stream from {:s}...".format(filename))
-#         sys.stdout.flush()
-#         stream = StreamFile(filename, seed=seed)
-#     else:
-#         print("Initializing stream from {:d} documents...".format(n_docs))
-#         sys.stdout.flush()
-#         stream = WordStream(n_docs=n_docs, exchangeability=exchangeability, filename=filename)
-#     stream.set_seed(seed)
-#     print("Loaded {:d} words.\n".format(len(stream.data)))
-#     sys.stdout.flush()
 
 # Define covid dna data stream
 if stream_name == "covid":
@@ -176,7 +162,17 @@ if method == "conformal-bayesian-dp":
                           n_track = n_track,
                           unique = method_unique,
                           n_bins = n_bins,
-                          scorer_type = "Bayesian-DP")
+                          scorer_type = "Bayesian-DP",
+                          two_sided=two_sided)
+    method_name = method + "_unique" + str(int(method_unique)) + "_bins" + str(n_bins) + "_track" + str(n_track)
+
+elif method == "conformal-bootstrap":
+    worker = ConformalCMS(stream, cms,
+                          n_track = n_track,
+                          unique = method_unique,
+                          n_bins = n_bins,
+                          scorer_type = "Bootstrap",
+                          two_sided=two_sided)
     method_name = method + "_unique" + str(int(method_unique)) + "_bins" + str(n_bins) + "_track" + str(n_track)
 
 elif method == "conformal-constant":
@@ -184,7 +180,8 @@ elif method == "conformal-constant":
                           n_track = n_track,
                           unique = method_unique,
                           n_bins = n_bins,
-                          scorer_type = "Constant")
+                          scorer_type = "Constant", 
+                          two_sided=two_sided)
     method_name = method + "_unique" + str(int(method_unique)) + "_bins" + str(n_bins) + "_track" + str(n_track)
 
 elif method == "conformal-proportional":
@@ -192,7 +189,8 @@ elif method == "conformal-proportional":
                           n_track = n_track,
                           unique = method_unique,
                           n_bins = n_bins,
-                          scorer_type = "Proportional")
+                          scorer_type = "Proportional",
+                          two_sided=two_sided)
     method_name = method + "_unique" + str(int(method_unique)) + "_bins" + str(n_bins) + "_track" + str(n_track)
 
 elif method == "conformal-adaptive":
@@ -201,11 +199,12 @@ elif method == "conformal-adaptive":
                           prop_train = 0.5,
                           unique = method_unique,
                           n_bins = n_bins,
-                          scorer_type = "Adaptive")
+                          scorer_type = "Adaptive", 
+                          two_sided=two_sided)
     method_name = method + "_unique" + str(int(method_unique)) + "_bins" + str(n_bins) + "_track" + str(n_track)
 
 elif method == "bootstrap":
-    worker = BootstrapCMS(stream, cms)
+    worker = BootstrapCMS(stream, cms, two_sided=two_sided)
     method_name = method
 
 elif method == "classical":
@@ -224,11 +223,11 @@ elif method == "bayesian-oracle":
     else:
         print("Error! Unknown model.")
         pdb.set_trace()
-    worker = BayesianCMS(stream, cms, model=model, alpha=alpha, sigma=sigma, tau=tau, posterior=posterior)
+    worker = BayesianCMS(stream, cms, model=model, alpha=alpha, sigma=sigma, tau=tau, posterior=posterior, two_sided=two_sided)
     method_name = method
 
 elif method.startswith("bayesian-dp-oracle"):
-    worker = BayesianCMS(stream, cms, model="DP", alpha=alpha, posterior=posterior)
+    worker = BayesianCMS(stream, cms, model="DP", alpha=alpha, posterior=posterior, two_sided=two_sided)
     method_name = method
 
 elif method.startswith("bayesian-dp-"):
@@ -237,11 +236,11 @@ elif method.startswith("bayesian-dp-"):
         alpha_cms = None
     else:
         alpha_cms = float(alpha_cms_str)
-    worker = BayesianCMS(stream, cms, model="DP", alpha=alpha_cms, posterior=posterior)
+    worker = BayesianCMS(stream, cms, model="DP", alpha=alpha_cms, posterior=posterior, two_sided=two_sided)
     method_name = method
 
 elif method.startswith("bayesian-sp-oracle"):
-    worker = BayesianCMS(stream, cms, model="NGGP", alpha=1, sigma=sigma, tau=1, posterior=posterior)
+    worker = BayesianCMS(stream, cms, model="NGGP", alpha=1, sigma=sigma, tau=1, posterior=posterior, two_sided=two_sided)
     method_name = method
 
 elif method.startswith("bayesian-sp-"):
@@ -250,11 +249,11 @@ elif method.startswith("bayesian-sp-"):
         sigma_cms = None
     else:
         sigma_cms = float(sigma_cms_str)
-    worker = BayesianCMS(stream, cms, model="NGGP", alpha=1, sigma=sigma_cms, tau=1, posterior=posterior)
+    worker = BayesianCMS(stream, cms, model="NGGP", alpha=1, sigma=sigma_cms, tau=1, posterior=posterior, two_sided=two_sided)
     method_name = method
 
 elif method == "bayesian":
-    worker = BayesianCMS(stream, cms, posterior=posterior)
+    worker = BayesianCMS(stream, cms, posterior=posterior, two_sided=two_sided)
     method_name = method
 
 else:
@@ -278,12 +277,13 @@ def add_header(df):
     df["n"] = n
     df["seed"] = seed
     df["confidence"] = confidence
+    df["two_sided"] = two_sided
     return df
 
 ################
 # Save results #
 ################
-outfile = "results/" + stream_name + "/detailed/" + outfile_prefix + "_" + method_name + "_" + confidence_str + ".txt"
+outfile = "results/" + stream_name + "/detailed/" + outfile_prefix + "_" + method_name + "_" + confidence_str + "_ts" + str(int(two_sided)) + ".txt"
 add_header(results).to_csv(outfile, index=False)
 print("\nDetailed results written to {:s}\n".format(outfile))
 sys.stdout.flush()
@@ -302,7 +302,7 @@ print(summary_marginal)
 print()
 sys.stdout.flush()
 
-outfile = "results/" + stream_name + "/marginal/" + outfile_prefix + "_" + method_name + "_" + confidence_str+ ".txt"
+outfile = "results/" + stream_name + "/marginal/" + outfile_prefix + "_" + method_name + "_" + confidence_str + "_ts" + str(int(two_sided)) + ".txt"
 add_header(summary_marginal).to_csv(outfile, index=False)
 print("\nMarginal summary written to {:s}\n".format(outfile))
 sys.stdout.flush()
@@ -317,7 +317,7 @@ print(summary_conditional)
 print()
 sys.stdout.flush()
 
-outfile = "results/" + stream_name + "/conditional/" + outfile_prefix + "_" + method_name + "_" + confidence_str + ".txt"
+outfile = "results/" + stream_name + "/conditional/" + outfile_prefix + "_" + method_name + "_" + confidence_str + "_ts" + str(int(two_sided)) + ".txt"
 add_header(summary_conditional).to_csv(outfile, index=False)
 print("\nConditional summary written to {:s}\n".format(outfile))
 sys.stdout.flush()

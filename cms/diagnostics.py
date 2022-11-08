@@ -39,7 +39,8 @@ def evaluate_conditional(results, nbins=5, include_seen=False, unique=False):
 
     num_unique = len(set(results["count"]))
     if nbins > num_unique:
-        print(nbins)
+        nbins = num_unique
+
     results["count-bin"], bin_endpoints = pd.qcut(np.array(results["count"]), nbins, retbins=True, labels=False, precision=0, duplicates="drop")
     print("Bin endpoints")
     print(bin_endpoints)

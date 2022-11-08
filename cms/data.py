@@ -132,6 +132,82 @@ class PYP:
 
         return data
 
+class SP:
+    """ Stable process """
+    def __init__(self, sigma, seed=2021):
+        assert (sigma>=0) and (sigma<1)
+        self.sigma = sigma
+        self.seed = seed
+        self.reset()
+
+    def reset(self, seed=None):
+        if seed is not None:
+            self.seed = seed
+        # Initialize data container
+        self.data = defaultdict(lambda: 0)
+
+        # Initialize random number generator
+        self.rng = np.random.Generator(np.random.PCG64(self.seed))
+        self.P0 = self.rng.standard_normal
+
+    def _prob_vec(self, counts):
+        # Compute probability of observing a new label or a previously seen label
+        m = np.sum(counts)
+        k = len(counts)
+        # Compute probability of observing a new label
+        if m>0:
+            p_unseen = self.sigma * k / m
+        else:
+            p_unseen = 1.0
+        # Compute probability of observing a previously seen label
+        if m>0:
+            p_seen = (counts-self.sigma) / m
+        else:
+            p_seen = 0 * (counts-self.sigma)
+        out = np.maximum(0, np.concatenate([[p_unseen], p_seen]))
+        if np.abs(1-np.sum(out))>1e-3:
+            pdb.set_trace()
+        return out/np.sum(out)
+
+    def _sample_step(self, data):
+        counts = np.fromiter(data.values(), dtype=int)
+        prob = self._prob_vec(counts)
+        #j = np.random.choice(len(prob), 1, p=prob)[0]
+        j = random_choice(prob, rng=self.rng)
+        if j == 0:
+            x = np.round(self.P0(), 6)
+        else:
+            x = list(data.keys())[j-1]
+        return x
+
+    def sample_k(self, n):
+        k = 0
+        for m in np.arange(n):
+            # Compute probability of observing a new label
+            if m>0:
+                p_unseen = self.sigma * k / m
+            else:
+                p_unseen = 1
+            if np.random.uniform() < p_unseen:
+                k += 1
+        return k
+
+    def sample(self, n=1, verbose=False, store=True, method=None):
+        # Initialize empty data container
+        data = defaultdict(lambda: 0)
+
+        # Sample sequentially
+        for i in range(n):
+            x = self._sample_step(self.data)
+            data[x] = data[x]+1
+            if store:
+                self.data[x] = self.data[x] + 1
+
+        if n==1:
+            data = x
+
+        return data
+
 class DP:
     def __init__(self, alpha, seed=2021):
         assert (alpha>0)
@@ -197,8 +273,6 @@ def extract_ngrams(s, n, words):
 
 class WordStream:
     def __init__(self, n_docs=100, n_grams=2, seed=2021, filename_out=None):
-        #newsgroups_train = fetch_20newsgroups(subset='train')
-        #english_words_set = set(nltk.corpus.words.words())
         file_list = nltk.corpus.gutenberg.fileids()
         n_docs = np.minimum(n_docs, len(file_list))
         self.data = []

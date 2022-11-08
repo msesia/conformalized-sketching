@@ -15,81 +15,22 @@ rpy2.robjects.numpy2ri.activate()
 import pdb
 import matplotlib.pyplot as plt
 
-class HRScores:
-    """
-    CQR for lower bound
-    By definition, lower scores result in higher lower bounds (more liberal).
-    Higher scores result in more conservative bounds.
-    """
-    def __init__(self, cms, confidence, seed):
-        self.cms = copy.deepcopy(cms)
-        self.quantile = 1.0 - confidence
-        qmax = np.minimum(0.5,2*self.quantile)
-        self.quantiles = np.linspace(0.025,qmax,20)[::-1]
-        self.log_transform = False
-        self.bbox = IQR(self.quantile,self.quantiles, seed, log_transform=self.log_transform)
-        #self.bbox = QR(self.quantiles, seed, log_transform=self.log_transform)
-
-    def train(self, X, Y, X_calib=None, Y_calib=None):
-        # Fit black-box model
-        if self.log_transform:
-            X = np.log(1.0+X)
-            Y = np.log(1.0+Y)
-            X_calib = np.log(1.0+X_calib)
-            Y_calib = np.log(1.0+Y_calib)
-        self.bbox.fit(X, Y, X_calib=X_calib, Y_calib=Y_calib)
-
-    def compute_score(self, x, y):
-        "This score measures by how much we need to decrease the upper bound to obtain a valid lower bound"
-        upper = self.cms.estimate_count(x)
-        if self.log_transform:
-            upper = np.log(1.0+upper)
-        lower = self.bbox.predict([upper], quantiles=self.quantiles).flatten()
-        if self.log_transform:
-            lower = np.exp(lower) - 1
-
-        idx_below = np.where(lower<=y)[0]
-        if len(idx_below) > 0:
-            score = np.min(idx_below)
-        else:
-            score = len(self.quantiles)-1 + (np.min(lower)-y)
-
-        # DEBUG:
-        lower = self.predict_lower(x, score)[0]
-        if lower > y:
-            print("Detected inconsistency in conformity score!")
-
-        return int(score)
-
-    def predict_lower(self, x, tau):
-        upper = self.cms.estimate_count(x)
-        if self.log_transform:
-            upper = np.log(1.0+upper)
-        lower_grid = self.bbox.predict([upper], quantiles=self.quantiles)
-        if self.log_transform:
-            lower_grid = np.exp(lower_grid) - 1
-
-        if tau<len(lower_grid):
-            lower = lower_grid[:,tau]
-        else:
-            lower = lower_grid[:,-1] - (tau-len(lower_grid))
-        lower = np.maximum(0, lower).astype(int)
-
-        return np.round(lower).astype(int)
-
 class IQR:
     """
     Isotonic quantile regression model
     """
     def __init__(self, quantile, quantiles, seed, log_transform=False):
         self.r = robjects.r
+        #path = os.path.dirname(__file__)
+        #filename = path + "/ratio_uniforms.R"
+        #self.r['source'](filename)
         self.r('''library(isodistrreg) ''')
         self.quantile = np.round(quantile,5)
         self.quantiles = quantiles
         self.seed = seed
         self.log_transform = log_transform
 
-    def fit(self, X, Y, X_calib=None, Y_calib=None, debug=True):
+    def fit(self, X, Y, X_calib=None, Y_calib=None, debug=False):
         self.r('''
         fit <- NULL
         fit_idr = function(X,Y) {
@@ -121,35 +62,6 @@ class IQR:
         self.qr = QR(quantiles=[self.quantile], log_transform=self.log_transform)
         self.qr.fit(X,Y)
 
-        # DEBUGGING
-        if debug:
-            if X_calib is not None:
-                X_grid = np.linspace(0.8*np.minimum(np.min(X),np.min(X_calib)),1.2*np.maximum(np.max(X),np.max(X_calib)), 1000)
-            else:
-                X_grid = np.linspace(0.8*np.min(X),1.2*np.max(X), 1000)
-
-            pred = self.predict(X_grid, quantiles=self.quantiles)
-            if self.log_transform:
-                plt.scatter(np.exp(X)-1,np.exp(Y)-1, alpha=0.5, label="train")
-            else:
-                plt.scatter(X,Y, alpha=0.75, label="train")
-            for j in range(np.minimum(5, len(self.quantiles))):
-                if self.log_transform:
-                    plt.plot(np.exp(X_grid)-1, np.exp(pred[:,j])-1, label=self.quantiles[j], alpha=0.5)
-                else:
-                    plt.plot(X_grid, pred[:,j], label=self.quantiles[j], alpha=0.5)
-            if X_calib is not None:
-                if self.log_transform:
-                    plt.scatter(np.exp(X_calib)-1,np.exp(Y_calib)-1, alpha=0.5, label="calibration")
-                else:
-                    plt.scatter(X_calib,Y_calib, alpha=0.5, label="calibration")
-
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-
-            plt.show()
-
     def predict(self,X,quantiles=None):
         self.r('''
         predict_idr = function(X,quantile,seed) {
@@ -172,12 +84,16 @@ class IQR:
         if True:
             pred_qr = self.qr.predict(X)
             idx_above = np.where(X>np.max(self.X_train))[0]
+            #idx_above = np.arange(len(X))
             if len(idx_above)>0:
                 if(len(pred.shape)>1):
                     for j in range(pred.shape[1]):
                         pred[idx_above,j] = pred_qr[idx_above,0]
                 else:
                     pred[idx_above] = pred_qr[idx_above]
+            # idx_below = np.where(X<np.min(self.X_train))[0]
+            # if len(idx_below)>0:
+            #     pred[idx_below] = np.min(pred)
 
         if len(self.X_train)<100:
             pred = pred_qr[:,0]
@@ -218,44 +134,6 @@ class QR:
         for i in range(len(self.quantiles)):
             self.qr[i].fit(X_aug, Y)
 
-        # DEBUGGING
-        if debug:
-            if X_calib is not None:
-                X_grid = np.linspace(0.8*np.minimum(np.min(X),np.min(X_calib)),1.2*np.maximum(np.max(X),np.max(X_calib)), 1000)
-            else:
-                X_grid = np.linspace(0.8*np.min(X),1.2*np.max(X), 1000)
-
-            X_grid_aug = self.augmentation.transform(X_grid)
-            pred = np.zeros((len(X_grid),len(self.quantiles)))
-            for i in range(len(X_grid)):
-                pred[i,:] = self.predict([X_grid[i]])
-            if self.log_transform:
-                plt.scatter(np.exp(X)-1,np.exp(Y)-1, alpha=0.5, label="train")
-            else:
-                plt.scatter(X,Y, alpha=0.5, label="train")
-            for j in range(np.minimum(5, len(self.quantiles))):
-                if self.log_transform:
-                    plt.plot(np.exp(X_grid)-1, np.exp(pred[:,j])-1, label=self.quantiles[j], alpha=0.5)
-                else:
-                    plt.plot(X_grid, pred[:,j], label=self.quantiles[j], alpha=0.5)
-            if X_calib is not None:
-                if self.log_transform:
-                    plt.scatter(np.exp(X_calib)-1,np.exp(Y_calib)-1, alpha=0.5, label="calibration")
-                else:
-                    plt.scatter(X_calib,Y_calib, alpha=0.5, label="calibration")
-
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-            knots = self.augmentation.knots
-            for knot in knots:
-                plt.vlines(knot, 0, np.max(Y))
-
-            #plt.xlim(0,50)
-            #plt.ylim(0,50)
-            plt.show()
-            #pdb.set_trace()
-
 
     def predict(self, X, quantiles=None):
         X = np.array(X)
@@ -276,28 +154,57 @@ class QRScores:
     By definition, lower scores result in higher lower bounds (more liberal).
     Higher scores result in more conservative bounds.
     """
-    def __init__(self, cms, confidence, seed):
+    def __init__(self, cms, confidence, seed, two_sided=False):
         self.cms = copy.deepcopy(cms)
-        self.quantile = 1.0 - confidence
-        self.bbox = IQR(self.quantile,[self.quantile],seed)
+        self.two_sided = two_sided
+        alpha = 1.0 - confidence
+        if self.two_sided:
+            self.quantile_low = alpha
+            self.quantile_upp = 1.0-alpha
+            self.bbox_low = IQR(self.quantile_low,[self.quantile_low],seed)
+            self.bbox_upp = IQR(self.quantile_upp,[self.quantile_upp],seed)
+        else:
+            self.quantile = 1.0-alpha
+            self.bbox = IQR(self.quantile,[self.quantile],seed)
 
     def train(self, X, Y, X_calib=None, Y_calib=None):
         # Fit black-box model
-        self.bbox.fit(X, Y, X_calib=X_calib, Y_calib=Y_calib)
+        if self.two_sided:
+            self.bbox_low.fit(X, Y, X_calib=X_calib, Y_calib=Y_calib)
+            self.bbox_upp.fit(X, Y, X_calib=X_calib, Y_calib=Y_calib)
+        else:
+            self.bbox.fit(X, Y, X_calib=X_calib, Y_calib=Y_calib)
 
     def compute_score(self, x, y):
         "This score measures by how much we need to decrease the upper bound to obtain a valid lower bound"
-        upper = self.cms.estimate_count(x)
-        lower = self.bbox.predict([upper])[0]
+        upper_max = self.cms.estimate_count(x)
+        if self.two_sided:
+            lower_raw = self.bbox_low.predict([upper_max])[0]
+            upper_raw = self.bbox_upp.predict([upper_max])[0]
+            lower = np.maximum(0, np.minimum(lower_raw, upper_raw))
+            upper = np.minimum(upper_max, np.maximum(lower_raw, upper_raw))
+            score = np.maximum(lower-y, y-upper)
 
-        score = lower - y # Positive score means the lower bound is too high
-        return score.astype(int)
+        else:
+            lower = self.bbox.predict([upper_max])[0]
+            score = lower - y # Positive score means the lower bound is too high
 
-    def predict_lower(self, x, tau):
-        upper = self.cms.estimate_count(x)
-        lower = self.bbox.predict([upper])[0] - tau
-        lower = np.maximum(0, lower).astype(int)
-        return lower
+        return score.astype(int), 0
+
+    def predict_interval(self, x, tau, tau_u):
+        upper_max = self.cms.estimate_count(x)
+        if self.two_sided:
+            lower_raw = self.bbox_low.predict([upper_max])[0]
+            upper_raw = self.bbox_upp.predict([upper_max])[0]
+            lower = np.maximum(0, np.minimum(lower_raw, upper_raw)-tau)
+            upper = np.minimum(upper_max, np.maximum(lower_raw, upper_raw)+tau)
+
+        else:
+            lower = self.bbox.predict([upper_max])[0] - tau
+            lower = np.maximum(0, lower).astype(int)
+            upper = upper_max
+
+        return lower, upper_max
 
 class CustomTransformer:
     def __init__(self, n_knots=50):

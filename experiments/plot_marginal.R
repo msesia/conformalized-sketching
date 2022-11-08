@@ -18,11 +18,15 @@ results <- do.call("rbind", lapply(data.list, function(data.name) {
     idir <- sprintf("results_hpc/%s/marginal", data.name)
     ifile.list <- list.files(idir)
     res <- do.call("rbind", lapply(ifile.list, function(ifile) {
-        df <- read_delim(sprintf("%s/%s", idir, ifile), delim=",", col_types=cols())
-        if(endsWith(ifile, "_95.txt")) {
-            df <- df %>% mutate(confidence=0.95)
-        } else if (endsWith(ifile, "_50.txt")) {
-            df <- df %>% mutate(confidence=0.50)
+        if(startsWith(ifile, "exp1")) {
+            df <- read_delim(sprintf("%s/%s", idir, ifile), delim=",", col_types=cols())
+            if(endsWith(ifile, "_95.txt")) {
+                df <- df %>% mutate(confidence=0.95)
+            } else if (endsWith(ifile, "_50.txt")) {
+                df <- df %>% mutate(confidence=0.50)
+            }
+        } else {
+            df <- tibble()
         }
     }))
 }))

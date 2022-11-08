@@ -17,8 +17,11 @@ from scipy import optimize
 from scipy import stats
 from sklearn import mixture
 
-from cms.data import WordStream, StreamFile, DP
+from cms.data import WordStream, StreamFile, DP, SP
 from cms.utils import sort_dict
+
+from cms.chr import HistogramAccumulator
+
 
 def dict_to_list(d):
     v = list()
@@ -224,7 +227,6 @@ class BayesianDP:
             for n in range(N):
                 log_v += _log_pmf_c_k(J, c_v[n], K)
 
-            # Compute the part that was missing from Cai's paper
             if N>1:
                  tmp = _log_pmf_c_k(1, m, K)
                  log_v += (1.0-N) * tmp
@@ -247,6 +249,16 @@ class BayesianDP:
         pdf = self.posterior(x, param=param)
         ll = lower_bound_from_cdf(pdf, confidence, randomize=randomize)
         return ll, pdf
+
+    def prediction_interval(self, x, confidence, param=None, randomize=False):
+        if param is None:
+            param = self.alpha
+        pdf = self.posterior(x, param=param)
+        pdf = pdf.reshape((1,len(pdf)))
+        breaks = np.arange(pdf.shape[1])
+        CHR = HistogramAccumulator(pdf, breaks, confidence, delta_alpha=0.025)
+        S = CHR.predict_intervals(1.0-confidence)
+        return S.flatten().astype(int)
 
     def _neg_log_likelihood(self, alpha):
         """Compute negative log-likelihood for given α"""
@@ -276,7 +288,7 @@ class BayesianDP:
         return self.alpha
 
 class BayesianCMS:
-    def __init__(self, stream, cms, model="DP", alpha=None, sigma=None, tau=None, posterior="mcmc"):
+    def __init__(self, stream, cms, model="DP", alpha=None, sigma=None, tau=None, posterior="mcmc", two_sided=False):
         if alpha is not None:
             assert (alpha>0)
         if sigma is not None:
@@ -291,8 +303,9 @@ class BayesianCMS:
         self.tau = tau
         self.model_name = model
         self.posterior = posterior
+        self.two_sided = two_sided
 
-    def run(self, n, n_test, confidence=0.9, seed=2021):
+    def run(self, n, n_test, confidence=0.9, seed=2021, shift=0):
 
         np.random.seed(seed)
 
@@ -326,10 +339,14 @@ class BayesianCMS:
         for i in tqdm(range(n_test)):
             x = self.stream.sample()
             y = self.cms.true_count[x]
-            upper = self.cms.estimate_count(x)
 
-            # Compute lower bound using exact posterior
-            lower, _ = model.lower_bound(x, confidence, randomize=True)
+            if self.two_sided:
+                lower, upper = model.prediction_interval(x, confidence, randomize=True)
+            else:
+                # Compute lower bound using exact posterior
+                upper = self.cms.estimate_count(x)
+                lower, _ = model.lower_bound(x, confidence, randomize=True)
+
             posterior = model.posterior(x)
 
             # Estimate the true count
@@ -353,7 +370,7 @@ class ClassicalCMS:
         self.stream = stream
         self.cms = copy.deepcopy(cms)
 
-    def run(self, n, n_test, confidence=0.9, seed=None):
+    def run(self, n, n_test, confidence=0.9, seed=None, shift=0):
 
         self.cms.reset()
         ## Process stream
