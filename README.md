@@ -2,7 +2,7 @@
 
 This repository contains a software implementation of the methods described in the following two papers:
  - "Conformalized Frequency Estimation from Sketched Data", by Matteo Sesia and Stefano Favaro (accepted in NeurIPS 2022) https://arxiv.org/abs/2204.04270
- - "Conformal Frequency Estimation with Sketched Data under Relaxed Exchangeability", by Matteo Sesia, Stefano Favaro, and Edgar Dobriban (longer version of the above, containing new methodology and theoretical results)
+ - "Conformal Frequency Estimation with Sketched Data under Relaxed Exchangeability", by Matteo Sesia, Stefano Favaro, and Edgar Dobriban (longer version of the above, containing new methodology and theoretical results) https://arxiv.org/abs/2211.04612
 
 
 This repository also contains the scripts utilized to carry out the numerical experiments and data analyses described in the aforementioned papers.
